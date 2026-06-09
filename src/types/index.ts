@@ -39,6 +39,53 @@ export interface ExportConfig {
   height: number;
 }
 
+export interface Transform2D {
+  x: number;
+  y: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+}
+
+export interface Keyframe {
+  id: string;
+  frameIndex: number;
+  transform: Transform2D;
+}
+
+export interface BezierControlPoints {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export type EasingPreset =
+  | 'linear'
+  | 'easeInQuad'
+  | 'easeOutQuad'
+  | 'easeInOutQuad'
+  | 'easeInCubic'
+  | 'easeOutCubic'
+  | 'easeInOutCubic'
+  | 'easeInElastic'
+  | 'easeOutElastic'
+  | 'easeInBounce'
+  | 'easeOutBounce'
+  | 'custom';
+
+export interface AnimationTrack {
+  id: string;
+  name: string;
+  enabled: boolean;
+  startKeyframe: Keyframe;
+  endKeyframe: Keyframe;
+  startFrame: number;
+  endFrame: number;
+  easingPreset: EasingPreset;
+  customBezier: BezierControlPoints;
+}
+
 export interface EditorState {
   frames: Frame[];
   selectedFrameIndex: number;
@@ -50,4 +97,7 @@ export interface EditorState {
   currentFrameIndex: number;
   canvasWidth: number;
   canvasHeight: number;
+  animationTracks: AnimationTrack[];
+  selectedTrackId: string | null;
+  showPathPreview: boolean;
 }

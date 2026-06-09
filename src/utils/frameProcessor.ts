@@ -1,5 +1,6 @@
-import type { Frame, Caption, CropConfig } from '@/types';
+import type { Frame, Caption, CropConfig, Transform2D } from '@/types';
 import { cloneImageData, cropImageData, resizeImageData } from './imageUtils';
+import { applyTransformToCanvas } from './keyframeInterpolator';
 
 export function renderCaptionOnImageData(
   imageData: ImageData,
@@ -72,4 +73,32 @@ export function processAllFrames(
     imageData: processFrame(frame, captions, index, crop, exportWidth, exportHeight),
     delay: frame.delay,
   }));
+}
+
+export function renderFrameWithTransform(
+  ctx: CanvasRenderingContext2D,
+  imageData: ImageData,
+  transform: Transform2D | null
+) {
+  const canvas = ctx.canvas;
+  canvas.width = imageData.width;
+  canvas.height = imageData.height;
+
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (transform) {
+    applyTransformToCanvas(ctx, transform);
+  }
+
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = imageData.width;
+  tempCanvas.height = imageData.height;
+  const tempCtx = tempCanvas.getContext('2d');
+  if (tempCtx) {
+    tempCtx.putImageData(imageData, 0, 0);
+  }
+
+  ctx.drawImage(tempCanvas, 0, 0);
+  ctx.restore();
 }

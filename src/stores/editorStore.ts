@@ -1,6 +1,17 @@
 import { create } from 'zustand';
-import type { Frame, Caption, CropConfig, ExportConfig } from '@/types';
+import type {
+  Frame,
+  Caption,
+  CropConfig,
+  ExportConfig,
+  AnimationTrack,
+  Transform2D,
+  EasingPreset,
+  BezierControlPoints,
+  Keyframe,
+} from '@/types';
 import { generateId, cloneImageData, createBlankImageData } from '@/utils/imageUtils';
+import { createDefaultTransform, EASING_PRESETS } from '@/utils/keyframeInterpolator';
 
 interface EditorStore {
   frames: Frame[];
@@ -15,6 +26,12 @@ interface EditorStore {
   canvasHeight: number;
   showImportDialog: boolean;
   showExportDialog: boolean;
+  animationTracks: AnimationTrack[];
+  selectedTrackId: string | null;
+  showPathPreview: boolean;
+
+  _createKeyframe: (frameIndex: number, transform: Transform2D) => Keyframe;
+  _createDefaultTrack: () => AnimationTrack;
 
   setFrames: (frames: Frame[]) => void;
   setSelectedFrameIndex: (index: number) => void;
@@ -37,6 +54,17 @@ interface EditorStore {
 
   setCrop: (crop: Partial<CropConfig>) => void;
   setExportConfig: (config: Partial<ExportConfig>) => void;
+
+  setSelectedTrackId: (id: string | null) => void;
+  setShowPathPreview: (show: boolean) => void;
+  addAnimationTrack: () => void;
+  deleteAnimationTrack: (id: string) => void;
+  updateAnimationTrack: (id: string, updates: Partial<AnimationTrack>) => void;
+  setTrackEnabled: (id: string, enabled: boolean) => void;
+  setKeyframeTransform: (trackId: string, keyframeType: 'start' | 'end', transform: Partial<Transform2D>) => void;
+  setEasingPreset: (trackId: string, preset: EasingPreset) => void;
+  setCustomBezier: (trackId: string, bezier: BezierControlPoints) => void;
+  setTrackFrameRange: (trackId: string, startFrame: number, endFrame: number) => void;
 
   clearAll: () => void;
 }
@@ -72,6 +100,42 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   canvasHeight: 480,
   showImportDialog: false,
   showExportDialog: false,
+  animationTracks: [],
+  selectedTrackId: null,
+  showPathPreview: true,
+
+  _createKeyframe: (frameIndex, transform) => ({
+    id: generateId(),
+    frameIndex,
+    transform,
+  }),
+
+  _createDefaultTrack: () => {
+    const state = get();
+    const maxFrame = Math.max(0, state.frames.length - 1);
+    const defaultTransform = createDefaultTransform(state.canvasWidth, state.canvasHeight);
+    const startTransform = { ...defaultTransform, x: defaultTransform.x - 100 };
+    const endTransform = { ...defaultTransform, x: defaultTransform.x + 100 };
+    return {
+      id: generateId(),
+      name: `动画轨道 ${state.animationTracks.length + 1}`,
+      enabled: true,
+      startKeyframe: {
+        id: generateId(),
+        frameIndex: 0,
+        transform: startTransform,
+      },
+      endKeyframe: {
+        id: generateId(),
+        frameIndex: maxFrame,
+        transform: endTransform,
+      },
+      startFrame: 0,
+      endFrame: maxFrame,
+      easingPreset: 'easeInOutCubic',
+      customBezier: { ...EASING_PRESETS.custom },
+    };
+  },
 
   setFrames: (frames) => {
     if (frames.length > 0) {
@@ -219,6 +283,102 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setCrop: (crop) => set({ crop: { ...get().crop, ...crop } }),
   setExportConfig: (config) => set({ exportConfig: { ...get().exportConfig, ...config } }),
 
+  setSelectedTrackId: (id) => set({ selectedTrackId: id }),
+  setShowPathPreview: (show) => set({ showPathPreview: show }),
+
+  addAnimationTrack: () => {
+    const state = get();
+    if (state.frames.length === 0) return;
+    const newTrack = state._createDefaultTrack();
+    set({
+      animationTracks: [...state.animationTracks, newTrack],
+      selectedTrackId: newTrack.id,
+    });
+  },
+
+  deleteAnimationTrack: (id) => {
+    const state = get();
+    const newTracks = state.animationTracks.filter((t) => t.id !== id);
+    set({
+      animationTracks: newTracks,
+      selectedTrackId: state.selectedTrackId === id ? (newTracks.length > 0 ? newTracks[0].id : null) : state.selectedTrackId,
+    });
+  },
+
+  updateAnimationTrack: (id, updates) => {
+    const state = get();
+    const newTracks = state.animationTracks.map((t) =>
+      t.id === id ? { ...t, ...updates } : t
+    );
+    set({ animationTracks: newTracks });
+  },
+
+  setTrackEnabled: (id, enabled) => {
+    const state = get();
+    const newTracks = state.animationTracks.map((t) =>
+      t.id === id ? { ...t, enabled } : t
+    );
+    set({ animationTracks: newTracks });
+  },
+
+  setKeyframeTransform: (trackId, keyframeType, transform) => {
+    const state = get();
+    const newTracks = state.animationTracks.map((t) => {
+      if (t.id !== trackId) return t;
+      if (keyframeType === 'start') {
+        return {
+          ...t,
+          startKeyframe: {
+            ...t.startKeyframe,
+            transform: { ...t.startKeyframe.transform, ...transform },
+          },
+        };
+      } else {
+        return {
+          ...t,
+          endKeyframe: {
+            ...t.endKeyframe,
+            transform: { ...t.endKeyframe.transform, ...transform },
+          },
+        };
+      }
+    });
+    set({ animationTracks: newTracks });
+  },
+
+  setEasingPreset: (trackId, preset) => {
+    const state = get();
+    const newTracks = state.animationTracks.map((t) =>
+      t.id === trackId ? { ...t, easingPreset: preset } : t
+    );
+    set({ animationTracks: newTracks });
+  },
+
+  setCustomBezier: (trackId, bezier) => {
+    const state = get();
+    const newTracks = state.animationTracks.map((t) =>
+      t.id === trackId ? { ...t, customBezier: bezier } : t
+    );
+    set({ animationTracks: newTracks });
+  },
+
+  setTrackFrameRange: (trackId, startFrame, endFrame) => {
+    const state = get();
+    const safeStart = Math.max(0, Math.min(startFrame, endFrame));
+    const safeEnd = Math.max(0, Math.max(startFrame, endFrame));
+    const newTracks = state.animationTracks.map((t) => {
+      if (t.id !== trackId) return t;
+      return {
+        ...t,
+        startFrame: safeStart,
+        endFrame: safeEnd,
+        startKeyframe: { ...t.startKeyframe, frameIndex: safeStart },
+        endKeyframe: { ...t.endKeyframe, frameIndex: safeEnd },
+      };
+    });
+    set({ animationTracks: newTracks });
+  },
+
   clearAll: () =>
     set({
       frames: [],
@@ -229,5 +389,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       currentFrameIndex: 0,
       showImportDialog: false,
       showExportDialog: false,
+      animationTracks: [],
+      selectedTrackId: null,
     }),
 }));

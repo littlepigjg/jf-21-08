@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
-import { processFrame } from '@/utils/frameProcessor';
+import { processFrame, renderFrameWithTransform } from '@/utils/frameProcessor';
+import { evaluateTracks, generatePathPreview } from '@/utils/keyframeInterpolator';
 
 export default function PreviewCanvas() {
   const {
@@ -17,9 +18,13 @@ export default function PreviewCanvas() {
     canvasHeight,
     selectedFrameIndex,
     setSelectedFrameIndex,
+    animationTracks,
+    showPathPreview,
+    selectedTrackId,
   } = useEditorStore();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
   const accumulatedTimeRef = useRef<number>(0);
@@ -67,6 +72,7 @@ export default function PreviewCanvas() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    const overlayCanvas = overlayCanvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
@@ -74,16 +80,80 @@ export default function PreviewCanvas() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (frames.length === 0) return;
+    if (frames.length === 0) {
+      if (overlayCanvas) {
+        const octx = overlayCanvas.getContext('2d');
+        if (octx) octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      }
+      return;
+    }
 
     const frame = frames[currentFrameIndex];
     if (!frame) return;
 
     const processedData = processFrame(frame, captions, currentFrameIndex, crop);
-    canvas.width = processedData.width;
-    canvas.height = processedData.height;
-    ctx.putImageData(processedData, 0, 0);
-  }, [currentFrameIndex, frames, captions, crop]);
+
+    const transform = evaluateTracks(animationTracks, currentFrameIndex);
+    renderFrameWithTransform(ctx, processedData, transform);
+
+    if (overlayCanvas) {
+      overlayCanvas.width = canvas.width;
+      overlayCanvas.height = canvas.height;
+      const octx = overlayCanvas.getContext('2d');
+      if (octx) {
+        octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+        if (showPathPreview && animationTracks.length > 0) {
+          const enabledTracks = animationTracks.filter((t) => t.enabled);
+          enabledTracks.forEach((track) => {
+            const isSelected = selectedTrackId === track.id;
+            const points = generatePathPreview(track, 60);
+
+            octx.strokeStyle = isSelected ? '#06b6d4' : 'rgba(6, 182, 212, 0.4)';
+            octx.lineWidth = isSelected ? 2 : 1.5;
+            octx.setLineDash(isSelected ? [] : [6, 4]);
+            octx.beginPath();
+            points.forEach((p, i) => {
+              if (i === 0) octx.moveTo(p.x, p.y);
+              else octx.lineTo(p.x, p.y);
+            });
+            octx.stroke();
+            octx.setLineDash([]);
+
+            if (isSelected) {
+              const startP = track.startKeyframe.transform;
+              const endP = track.endKeyframe.transform;
+
+              octx.fillStyle = '#22c55e';
+              octx.strokeStyle = '#fff';
+              octx.lineWidth = 2;
+              octx.beginPath();
+              octx.arc(startP.x, startP.y, 8, 0, Math.PI * 2);
+              octx.fill();
+              octx.stroke();
+
+              octx.fillStyle = '#ef4444';
+              octx.beginPath();
+              octx.arc(endP.x, endP.y, 8, 0, Math.PI * 2);
+              octx.fill();
+              octx.stroke();
+
+              const currentT = (currentFrameIndex - track.startFrame) / (track.endFrame - track.startFrame);
+              if (currentT >= 0 && currentT <= 1) {
+                const curIdx = Math.min(points.length - 1, Math.floor(currentT * points.length));
+                const curPoint = points[curIdx];
+                octx.fillStyle = '#f59e0b';
+                octx.beginPath();
+                octx.arc(curPoint.x, curPoint.y, 6, 0, Math.PI * 2);
+                octx.fill();
+                octx.stroke();
+              }
+            }
+          });
+        }
+      }
+    }
+  }, [currentFrameIndex, frames, captions, crop, animationTracks, showPathPreview, selectedTrackId]);
 
   const handleCanvasClick = () => {
     if (frames.length === 0) return;
@@ -156,11 +226,19 @@ export default function PreviewCanvas() {
           />
           <canvas
             ref={canvasRef}
-            className="relative z-10 shadow-2xl"
+            className="absolute inset-0 z-10 shadow-2xl"
             style={{
               width: displayWidth,
               height: displayHeight,
               imageRendering: zoom >= 2 ? 'pixelated' : 'auto',
+            }}
+          />
+          <canvas
+            ref={overlayCanvasRef}
+            className="absolute inset-0 z-20 pointer-events-none"
+            style={{
+              width: displayWidth,
+              height: displayHeight,
             }}
           />
           {frames.length === 0 && (

@@ -8,10 +8,12 @@ import {
   Plus,
   Trash2,
   Clock,
+  Layers,
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import type { Caption } from '@/types';
 import { cn } from '@/lib/utils';
+import AnimationTrackEditor from '@/components/AnimationTrackEditor';
 
 interface PanelSectionProps {
   title: string;
@@ -238,6 +240,14 @@ export default function PropertyPanel() {
             应用到所有帧
           </button>
         </div>
+      </PanelSection>
+
+      <PanelSection
+        title="关键帧动画"
+        icon={<Layers className="w-4 h-4 text-cyan-400" />}
+        defaultOpen={true}
+      >
+        <AnimationTrackEditor />
       </PanelSection>
 
       <PanelSection
